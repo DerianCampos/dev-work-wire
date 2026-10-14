@@ -6,6 +6,8 @@ from importlib.metadata import version as _pkg_version
 import pyfiglet
 import typer
 
+from devworkwire.presentation.cli.theme import themed_echo
+
 _LOGO_TEXT = "DWIRE"
 _LOGO_FONT = "ansi_shadow"
 _TAGLINE = "Backlog Workflow Assistant"
@@ -42,8 +44,8 @@ def render_legend() -> str:
 
 
 def print_banner() -> None:
-    typer.secho(render_box(), fg=typer.colors.CYAN)
+    themed_echo(render_box())
     typer.echo()
-    typer.secho(render_legend(), fg=typer.colors.BRIGHT_BLACK)
+    themed_echo(render_legend(), "muted")
     typer.echo()
     typer.echo("System ready.")

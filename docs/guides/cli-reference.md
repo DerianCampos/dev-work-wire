@@ -18,6 +18,8 @@ python -m devworkwire.presentation.cli
 
 Running `dwire` without a command opens the menu. Direct commands run without the menu or banner.
 
+Use the root option `--theme NAME` to choose a palette for one run, or `dwire config theme NAME` to save it. Choices are `dark` (default), `light`, `dracula`, `solarized`, and `monochrome`. A nonempty `NO_COLOR` environment variable uses Monochrome. See [CLI themes](../getting-started/configuration.md#cli-themes) for storage and precedence.
+
 ## JSON output for tools and scripts
 
 Place `--format json` before any direct command to receive one JSON object on stdout.
@@ -203,8 +205,10 @@ dwire config add-project KEY [--default]
 dwire config set-default KEY
 dwire config remove-project KEY
 dwire config show
+dwire config theme [dark|light|dracula|solarized|monochrome]
 dwire config clear [--yes]
 dwire --project KEY <command>
+dwire --theme NAME <command>
 ```
 
 `setup` prompts for anything not passed as an option, and always prompts for the API token (hidden; there is no token option). Re-running it keeps the stored token if you press Enter and keeps your projects. The first project becomes the default; `add-project`, `set-default` and `remove-project` manage the list. `show` prints the effective values with their source (`env`, `db`, `--project` or `devworkwire.yml`), the project list, and masks the token. `clear` deletes the connection and projects after confirmation. The root `--project KEY` option runs any command against another configured project. `setup` is interactive-only, so it fails under `--format json`; the other `config` commands support JSON (`clear` needs `--yes`). See [Configuration](../getting-started/configuration.md) for precedence and storage.

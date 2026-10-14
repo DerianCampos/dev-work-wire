@@ -12,6 +12,7 @@ Load an already-defined work structure (Epics, Stories, Acceptance Criteria) int
 - **Preview and validate first** — `preview-folder` checks the Markdown locally, with file and line locations for every error, before anything is written.
 - **Safe to rerun** — a local resume record skips items already uploaded and stops on uncertain outcomes instead of creating duplicates.
 - **Interactive menu or direct commands** — browse, create, preview, and import from a keyboard-driven menu, or script the same actions.
+- **CLI themes** — choose Dark, Light, Dracula, Solarized, or Monochrome with `dwire config theme`; override with `--theme` for one run.
 - **JSON output** — `--format json` returns one machine-readable result per command for scripts and AI agents.
 - **Manage and search work** — edit story fields, assign issues, select workflow transitions, and search with filters or raw JQL.
 - **AI agent skill** — a portable skill in [`skills/devworkwire/`](skills/devworkwire/SKILL.md) teaches terminal-capable agents to use the CLI.

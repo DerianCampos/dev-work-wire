@@ -8,10 +8,11 @@ from InquirerPy.base.control import Choice
 from devworkwire.core.ports.work_item_changes import SearchFilters, StoryUpdate
 from devworkwire.features.progress.application.transitions import TransitionRequest
 from devworkwire.presentation.cli.work_actions import WorkActions
+from devworkwire.presentation.cli.theme import prompt_style
 
 
 def _text(message: str) -> str:
-    return inquirer.text(message=message).execute()
+    return inquirer.text(style=prompt_style(), message=message).execute()
 
 
 def _values(message: str) -> tuple[str, ...]:
@@ -20,6 +21,7 @@ def _values(message: str) -> tuple[str, ...]:
 
 def _story_update() -> StoryUpdate | None:
     fields = inquirer.checkbox(
+        style=prompt_style(),
         message="Fields to change (Space selects; unselected fields stay unchanged):",
         choices=[
             Choice(value=field, name=name)
@@ -72,6 +74,7 @@ def _story_update() -> StoryUpdate | None:
 def run_work_menu(actions: WorkActions) -> bool:
     try:
         choice = inquirer.select(
+            style=prompt_style(),
             message="Manage work:",
             choices=[
                 "Edit story",
@@ -92,11 +95,13 @@ def run_work_menu(actions: WorkActions) -> bool:
                 if value is not None and value is not False:
                     typer.echo(f"{field}: {value!r}")
             if inquirer.confirm(
+                style=prompt_style(),
                 message=f"Apply these changes to {key}?", default=False
             ).execute():
                 asyncio.run(actions.update(key, update))
         elif choice == "Assign issue":
             mode = inquirer.select(
+                style=prompt_style(),
                 message="Assign to:",
                 choices=["Current user", "Account ID", "Unassigned", "Back"],
             ).execute()
@@ -110,6 +115,7 @@ def run_work_menu(actions: WorkActions) -> bool:
                 )
             )
             if inquirer.confirm(
+                style=prompt_style(),
                 message=f"Assign {key} to {assignee or 'unassigned'}?",
                 default=False,
             ).execute():
@@ -122,6 +128,7 @@ def run_work_menu(actions: WorkActions) -> bool:
                 typer.echo("No transitions available.")
                 return True
             selected = inquirer.select(
+                style=prompt_style(),
                 message="Available transitions:",
                 choices=[
                     *(
@@ -137,6 +144,7 @@ def run_work_menu(actions: WorkActions) -> bool:
             if selected is None:
                 return False
             if inquirer.confirm(
+                style=prompt_style(),
                 message=f"Apply transition {selected} to {key}?", default=False
             ).execute():
                 asyncio.run(
@@ -153,6 +161,7 @@ def run_work_menu(actions: WorkActions) -> bool:
 def run_search_menu(actions: WorkActions) -> bool:
     try:
         mode = inquirer.select(
+            style=prompt_style(),
             message="Search with:", choices=["Filters", "Raw JQL", "Back"]
         ).execute()
         if mode == "Back":
