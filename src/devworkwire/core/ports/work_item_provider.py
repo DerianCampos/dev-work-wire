@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Optional
 from devworkwire.core.domain import Epic, UserStory
+from devworkwire.core.ports.work_item_changes import StoryUpdate, TransitionSummary
 
 
 @dataclass(frozen=True)
@@ -13,6 +14,34 @@ class WorkItemSummary:
 
 
 class WorkItemProvider(ABC):
+    @abstractmethod
+    async def get_issue_type(self, key: str) -> str | None:
+        pass
+
+    @abstractmethod
+    async def update_story(self, key: str, update: StoryUpdate) -> None:
+        pass
+
+    @abstractmethod
+    async def current_account_id(self) -> str:
+        pass
+
+    @abstractmethod
+    async def assign_issue(self, key: str, account_id: str | None) -> None:
+        pass
+
+    @abstractmethod
+    async def list_transitions(self, key: str) -> list[TransitionSummary]:
+        pass
+
+    @abstractmethod
+    async def transition_issue(self, key: str, transition_id: str) -> None:
+        pass
+
+    @abstractmethod
+    async def search_work_items(self, jql: str) -> list[WorkItemSummary]:
+        pass
+
     @abstractmethod
     async def fetch_epic(self, key: str) -> Optional[Epic]:
         """Fetch an Epic by its key."""

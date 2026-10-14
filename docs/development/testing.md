@@ -11,7 +11,8 @@ tests/
 │   │   ├── test_app_config.py       # AppConfig singleton, env selection, env-var interpolation
 │   │   └── test_project_config.py   # devworkwire.yml loading and validation
 │   ├── core/
-│   │   └── test_composition.py      # Container builds JiraSettings from config; caches the provider
+│   │   ├── test_composition.py      # Container builds JiraSettings from config; caches the provider
+│   │   └── test_work_actions.py     # Story patches, filter composition, assignment and transition selection
 │   ├── domain/
 │   │   ├── test_entities.py         # Epic / UserStory construction and validation
 │   │   └── test_value_objects.py    # IssueId / Priority / StoryPoints / Label
@@ -19,16 +20,19 @@ tests/
 │   │   └── test_markdown_parser.py  # epic.md / stories.md parsing
 │   ├── jira/
 │   │   ├── test_jira_provider.py    # JiraProvider against respx-mocked HTTP (incl. retry/timeout/api_version wiring)
+│   │   ├── test_jira_changes.py     # Edit/assignment/transition payloads, uncertain writes and search pagination
 │   │   └── test_markdown_to_adf.py  # Markdown description -> Atlassian Document Format conversion
 │   ├── presentation/
 │   │   ├── test_banner.py           # Startup banner rendering
 │   │   ├── test_epic_panel.py       # Bordered epic/story detail panels
 │   │   ├── test_interactive_menu.py # Interactive menu wiring (selection -> prompt -> action), mocked
-│   │   └── test_menu_view.py        # Menu screen renderer and keyboard shortcuts
+│   │   ├── test_menu_view.py        # Menu screen renderer and keyboard shortcuts
+│   │   └── test_work_menu.py        # Manage/search prompts, clearing, confirmation and cancellation
 │   └── shared/
 │       └── test_log_config.py       # Structured logging formatters and context
 └── integration/
-    └── test_cli.py                  # Typer commands end-to-end via CliRunner + respx
+    ├── test_cli.py                  # Typer commands end-to-end via CliRunner + respx
+    └── test_work_commands.py        # Edit, assignment, transition and search commands in text/JSON
 ```
 
 ## Running Tests
