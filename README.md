@@ -13,6 +13,7 @@ Load an already-defined work structure (Epics, Stories, Acceptance Criteria) int
 - **Safe to rerun** — a local resume record skips items already uploaded and stops on uncertain outcomes instead of creating duplicates.
 - **Interactive menu or direct commands** — browse, create, preview, and import from a keyboard-driven menu, or script the same actions.
 - **JSON output** — `--format json` returns one machine-readable result per command for scripts and AI agents.
+- **Manage and search work** — edit story fields, assign issues, select workflow transitions, and search with filters or raw JQL.
 - **AI agent skill** — a portable skill in [`skills/devworkwire/`](skills/devworkwire/SKILL.md) teaches terminal-capable agents to use the CLI.
 
 ## Requirements
@@ -43,6 +44,11 @@ dwire fetch-epic PROJ-123
 dwire list-stories PROJ-123
 dwire list-assigned
 dwire create-story PROJ-123 --title "Log in" --points 5
+dwire update-story PROJ-124 --points 8
+dwire assign PROJ-124 --assignee me
+dwire list-transitions PROJ-124
+dwire transition PROJ-124 --status "In Progress"
+dwire search --status "In Progress" --label backend --type Story
 
 dwire preview-folder path/to/work-items
 dwire import-folder path/to/work-items
@@ -54,6 +60,10 @@ dwire --format json import-folder path/to/work-items --yes
 | `fetch-epic`, `fetch-story` | Show one epic or story |
 | `list-stories`, `list-assigned` | List an epic's stories, or open work assigned to a user |
 | `create-epic`, `create-story` | Create a single item |
+| `update-story` | Edit only supplied story fields |
+| `assign` | Assign an issue to an account or remove its assignee |
+| `list-transitions`, `transition` | Discover available workflow actions and change status |
+| `search` | Search the selected project with filters, or run raw JQL |
 | `preview-folder` | Validate a folder locally without contacting Jira |
 | `import-folder` | Create the epic and stories from a folder |
 | `resolve-import`, `rebind-import-story`, `retire-import-story` | Reconcile the local import record |

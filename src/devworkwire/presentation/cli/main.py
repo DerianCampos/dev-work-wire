@@ -22,6 +22,8 @@ from devworkwire.core.composition import Container
 from devworkwire.core.domain import Epic, Label, Priority, StoryPoints, UserStory
 from devworkwire.core.domain.exceptions import BusinessRuleViolation
 from devworkwire.core.ports.jira_config_store import JiraCredentials, normalize_project_key
+from devworkwire.core.ports.work_item_changes import SearchFilters, StoryUpdate
+from devworkwire.features.progress.application.transitions import TransitionRequest
 from devworkwire.features.import_.application.folder_preview import (
     FolderPreview,
     preview_folder as load_folder_preview,
@@ -33,6 +35,8 @@ from devworkwire.features.import_.application.folder_state import (
 )
 from devworkwire.presentation.cli.epic_panel import render_epic_panel, render_story_panel
 from devworkwire.presentation.cli.menu_view import MenuGroup, MenuOption, run_menu
+from devworkwire.presentation.cli.work_actions import WorkActions
+from devworkwire.presentation.cli.work_menu import run_search_menu, run_work_menu
 
 # Newer Typer releases bundle their own click copy, so their argument errors
 # are not instances of the installed click package's ClickException.
@@ -105,6 +109,9 @@ def _record(status: str, data: dict, error_code: str = "COMMAND_FAILED") -> None
         result.error_code = error_code
 
 
+work_actions = WorkActions(container, _record)
+
+
 def _created(item_type: str, key: str, story_id: str | None = None) -> None:
     result = _command_result.get()
     if result is not None:
@@ -166,6 +173,8 @@ _PREVIEW_FOLDER = "Preview and validate folder"
 _CONFIGURE = "Configure connection and projects"
 _IMPORT_FOLDER = "Import epic and stories from folder"
 _EXIT = "Exit"
+_SEARCH = "Search work items"
+_MANAGE = "Manage work items"
 
 _MENU_GROUPS = (
     MenuGroup(
@@ -175,6 +184,7 @@ _MENU_GROUPS = (
             MenuOption("2", _FETCH_STORY, _FETCH_STORY),
             MenuOption("3", _LIST_STORIES, _LIST_STORIES),
             MenuOption("4", _LIST_ASSIGNED, _LIST_ASSIGNED),
+            MenuOption("s", _SEARCH, _SEARCH),
         ),
     ),
     MenuGroup(
@@ -182,6 +192,7 @@ _MENU_GROUPS = (
         (
             MenuOption("5", _CREATE_EPIC, _CREATE_EPIC),
             MenuOption("6", _CREATE_STORY, _CREATE_STORY),
+            MenuOption("w", _MANAGE, _MANAGE),
         ),
     ),
     MenuGroup(
@@ -330,6 +341,78 @@ def create_story(
     """Create one story under an existing epic."""
     item = WorkItemInput(title, description, priority, tuple(labels), points)
     _run_command("create-story", lambda: asyncio.run(_create_story(epic_key, item)))
+
+
+@app.command("update-story")
+def update_story(
+    key: str,
+    title: Optional[str] = typer.Option(None, "--title"),
+    description: Optional[str] = typer.Option(None, "--description"),
+    priority: Optional[str] = typer.Option(None, "--priority"),
+    labels: list[str] = typer.Option([], "--label"),
+    points: Optional[int] = typer.Option(None, "--points", min=0),
+    epic: Optional[str] = typer.Option(None, "--epic"),
+    clear_labels: bool = typer.Option(False, "--clear-labels"),
+    clear_points: bool = typer.Option(False, "--clear-points"),
+    clear_epic: bool = typer.Option(False, "--clear-epic"),
+) -> None:
+    """Patch supplied story fields. --label replaces labels; omitted fields stay unchanged."""
+    try:
+        if clear_labels and labels:
+            raise ValueError("Choose --label or --clear-labels")
+        update = StoryUpdate(
+            title=title, description=description, priority=priority,
+            labels=tuple(labels) if labels or clear_labels else None,
+            points=points, epic_key=epic, clear_points=clear_points, clear_epic=clear_epic,
+        )
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+    _run_command("update-story", lambda: asyncio.run(work_actions.update(key, update)))
+
+
+@app.command("assign")
+def assign(
+    key: str,
+    assignee: Optional[str] = typer.Option(None, "--assignee", help="Jira account ID or me"),
+    unassign: bool = typer.Option(False, "--unassign"),
+) -> None:
+    """Assign any issue type, or remove its assignee."""
+    _run_command("assign", lambda: asyncio.run(work_actions.assign(key, assignee, unassign)))
+
+
+@app.command("list-transitions")
+def list_transitions(key: str) -> None:
+    """List available action IDs, names, and destination statuses."""
+    _run_command("list-transitions", lambda: asyncio.run(work_actions.transitions(key)))
+
+
+@app.command("transition")
+def transition(
+    key: str,
+    status: Optional[str] = typer.Option(None, "--status"),
+    transition_id: Optional[str] = typer.Option(None, "--transition-id"),
+) -> None:
+    """Change status using a destination status or an available transition ID."""
+    try:
+        request = TransitionRequest(status, transition_id)
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+    _run_command("transition", lambda: asyncio.run(work_actions.transition(key, request)))
+
+
+@app.command("search")
+def search(
+    statuses: list[str] = typer.Option([], "--status"),
+    labels: list[str] = typer.Option([], "--label"),
+    issue_types: list[str] = typer.Option([], "--type"),
+    jql: Optional[str] = typer.Option(None, "--jql"),
+) -> None:
+    """Search the selected project with filters, or run raw JQL as written."""
+    try:
+        filters = SearchFilters(tuple(statuses), tuple(labels), tuple(issue_types), jql)
+    except ValueError as error:
+        raise typer.BadParameter(str(error)) from error
+    _run_command("search", lambda: asyncio.run(work_actions.search(filters)))
 
 
 @app.command("import-folder")
@@ -1051,6 +1134,12 @@ def _run_interactive_menu() -> None:
                     message="Account ID (leave blank for current user):"
                 ).execute().strip()
                 asyncio.run(_list_assigned(account_id or None))
+            elif choice == _SEARCH:
+                if not run_search_menu(work_actions):
+                    continue
+            elif choice == _MANAGE:
+                if not run_work_menu(work_actions):
+                    continue
             elif choice == _CREATE_EPIC:
                 asyncio.run(_create_epic(_prompt_item()))
             elif choice == _CREATE_STORY:

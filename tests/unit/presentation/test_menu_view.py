@@ -33,6 +33,7 @@ def test_compact_menu_keeps_all_shortcuts_visible():
 
     assert "╭" not in screen
     assert all(f"[{number}]" in screen for number in range(10))
+    assert "[s]" in screen and "[w]" in screen
     assert all(len(line) <= 48 for line in screen.splitlines())
 
 
@@ -43,9 +44,9 @@ def test_very_narrow_menu_does_not_exceed_terminal_width():
 
 
 def test_short_menu_keeps_each_selected_action_visible():
-    for selected in range(10):
+    shortcuts = [option.number for group in main._MENU_GROUPS for option in group.options] + ["0"]
+    for selected, number in enumerate(shortcuts):
         screen = _plain_text(80, 10, selected)
-        number = selected + 1 if selected < 9 else 0
         assert len(screen.splitlines()) <= 10
         assert f"❯ [{number}]" in screen
 
@@ -85,7 +86,8 @@ def test_help_never_exceeds_terminal_height():
     for height in range(3, 30):
         screen = _plain_text(80, height, show_help=True)
         assert len(screen.splitlines()) <= height, height
-    assert "[9] Configure connection and projects" in _plain_text(80, 17, show_help=True)
+    required_height = 8 + sum(len(group.options) for group in main._MENU_GROUPS)
+    assert "[9] Configure connection and projects" in _plain_text(80, required_height, show_help=True)
 
 
 def _press_keys(monkeypatch, keys: str) -> str:
@@ -116,6 +118,11 @@ def test_help_does_not_trigger_shortcuts_until_closed(monkeypatch):
 
 def test_nine_shortcut_selects_configure(monkeypatch):
     assert _press_keys(monkeypatch, "9") == main._CONFIGURE
+
+
+def test_letter_shortcuts_select_new_actions(monkeypatch):
+    assert _press_keys(monkeypatch, "s") == main._SEARCH
+    assert _press_keys(monkeypatch, "w") == main._MANAGE
 
 
 def test_zero_exits_menu(monkeypatch):

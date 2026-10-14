@@ -5,6 +5,10 @@ import backoff
 import httpx
 
 from devworkwire.core.domain import Epic, IssueId, Label, Priority, StoryPoints, UserStory
+from devworkwire.core.domain.exceptions import UncertainWriteException
+from devworkwire.core.ports.work_item_changes import (
+    StoryUpdate, TransitionSummary, validate_account_id, validate_issue_key,
+)
 from devworkwire.core.ports.jira_config_store import PROJECT_KEY_RE
 from devworkwire.core.ports.work_item_provider import WorkItemProvider, WorkItemSummary
 from devworkwire.infrastructure.external.jira.markdown_to_adf import markdown_to_adf
@@ -100,6 +104,10 @@ class JiraProvider(WorkItemProvider):
         self._fetch_story_with_retry = retry(self._fetch_story)
         self._list_stories_with_retry = retry(self._list_stories)
         self._list_assigned_with_retry = retry(self._list_assigned_work_items)
+        self._current_account_with_retry = retry(self._current_account_id)
+        self._transitions_with_retry = retry(self._list_transitions)
+        self._search_with_retry = retry(self._search_work_items)
+        self._issue_type_with_retry = retry(self._get_issue_type)
 
     @property
     def _issue_url(self) -> str:
@@ -107,6 +115,118 @@ class JiraProvider(WorkItemProvider):
 
     async def fetch_epic(self, key: str) -> Optional[Epic]:
         return await self._fetch_epic_with_retry(key)
+
+    async def update_story(self, key: str, update: StoryUpdate) -> None:
+        validate_issue_key(key)
+        fields: dict[str, object] = {}
+        if update.title is not None:
+            fields["summary"] = update.title
+        if update.description is not None:
+            fields["description"] = markdown_to_adf(update.description) if update.description else None
+        if update.priority is not None:
+            fields["priority"] = {"name": _jira_priority_name(Priority(update.priority))}
+        if update.labels is not None:
+            fields["labels"] = list(update.labels)
+        if update.points is not None or update.clear_points:
+            if not self.settings.story_points_field:
+                raise ValueError("Story points field is not configured")
+            fields[self.settings.story_points_field] = update.points
+        if update.epic_key is not None:
+            fields["parent"] = {"key": update.epic_key}
+        payload: dict[str, object] = {"fields": fields}
+        if update.clear_epic:
+            payload["update"] = {"parent": [{"set": {"none": True}}]}
+        await self._write("PUT", f"{self._issue_url}/{key}", payload)
+
+    async def get_issue_type(self, key: str) -> str | None:
+        validate_issue_key(key)
+        return await self._issue_type_with_retry(key)
+
+    async def _get_issue_type(self, key: str) -> str | None:
+        async with httpx.AsyncClient(timeout=self.settings.timeout) as client:
+            response = await client.get(
+                f"{self._issue_url}/{key}", params={"fields": "issuetype"},
+                auth=(self.settings.username, self.settings.api_token),
+            )
+            if response.status_code == 404:
+                return None
+            _raise_for_status_with_jira_detail(response)
+            return (response.json().get("fields", {}).get("issuetype") or {}).get("name", "Unknown")
+
+    async def current_account_id(self) -> str:
+        return await self._current_account_with_retry()
+
+    async def _current_account_id(self) -> str:
+        async with httpx.AsyncClient(timeout=self.settings.timeout) as client:
+            response = await client.get(
+                f"{self.settings.base_url}/rest/api/{self.settings.api_version}/myself",
+                auth=(self.settings.username, self.settings.api_token),
+            )
+            _raise_for_status_with_jira_detail(response)
+            account_id = response.json()["accountId"]
+            validate_account_id(account_id)
+            return account_id
+
+    async def assign_issue(self, key: str, account_id: str | None) -> None:
+        validate_issue_key(key)
+        if account_id is not None:
+            validate_account_id(account_id)
+        await self._write("PUT", f"{self._issue_url}/{key}/assignee", {"accountId": account_id})
+
+    async def list_transitions(self, key: str) -> list[TransitionSummary]:
+        validate_issue_key(key)
+        return await self._transitions_with_retry(key)
+
+    async def _list_transitions(self, key: str) -> list[TransitionSummary]:
+        async with httpx.AsyncClient(timeout=self.settings.timeout) as client:
+            response = await client.get(
+                f"{self._issue_url}/{key}/transitions",
+                params={"expand": "transitions.fields"},
+                auth=(self.settings.username, self.settings.api_token),
+            )
+            _raise_for_status_with_jira_detail(response)
+            return [TransitionSummary(
+                id=transition["id"], name=transition["name"], status=transition["to"]["name"],
+                required_fields=tuple(
+                    field for field, metadata in transition.get("fields", {}).items()
+                    if metadata.get("required")
+                ),
+            ) for transition in response.json().get("transitions", [])]
+
+    async def transition_issue(self, key: str, transition_id: str) -> None:
+        validate_issue_key(key)
+        if not transition_id.isdecimal():
+            raise ValueError("Transition ID must be numeric")
+        await self._write(
+            "POST", f"{self._issue_url}/{key}/transitions", {"transition": {"id": transition_id}},
+        )
+
+    async def _write(self, method: str, url: str, payload: dict[str, object]) -> None:
+        try:
+            async with httpx.AsyncClient(timeout=self.settings.timeout) as client:
+                response = await client.request(
+                    method, url, json=payload, auth=(self.settings.username, self.settings.api_token),
+                )
+                _raise_for_status_with_jira_detail(response)
+        except httpx.RequestError as error:
+            raise UncertainWriteException(
+                "Write outcome is uncertain. Inspect the issue in Jira before retrying."
+            ) from error
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code == 408 or error.response.status_code >= 500:
+                raise UncertainWriteException(
+                    "Write outcome is uncertain. Inspect the issue in Jira before retrying."
+                ) from error
+            raise
+
+    async def search_work_items(self, jql: str) -> list[WorkItemSummary]:
+        if not jql.strip():
+            raise ValueError("JQL cannot be empty")
+        return await self._search_with_retry(jql)
+
+    async def _search_work_items(self, jql: str) -> list[WorkItemSummary]:
+        issues = await self._search_issues(jql, ["summary", "issuetype", "status"])
+        return self._work_item_summaries(issues)
 
     async def create_epic(self, epic: Epic) -> str:
         # Jira creation is not idempotent; retrying an uncertain response can duplicate issues.
@@ -221,6 +341,10 @@ class JiraProvider(WorkItemProvider):
             "AND statusCategory != Done ORDER BY updated DESC, key ASC"
         )
         issues = await self._search_issues(jql, ["summary", "issuetype", "status"])
+        return self._work_item_summaries(issues)
+
+    @staticmethod
+    def _work_item_summaries(issues: list[dict]) -> list[WorkItemSummary]:
         return [
             WorkItemSummary(
                 key=issue["key"],
@@ -234,6 +358,7 @@ class JiraProvider(WorkItemProvider):
     async def _search_issues(self, jql: str, fields: list[str]) -> list[dict]:
         issues: list[dict] = []
         next_page_token = None
+        seen_tokens: set[str] = set()
         auth = (self.settings.username, self.settings.api_token)
         search_url = f"{self.settings.base_url}/rest/api/3/search/jql"
         async with httpx.AsyncClient(timeout=self.settings.timeout) as client:
@@ -254,6 +379,9 @@ class JiraProvider(WorkItemProvider):
                 next_page_token = data.get("nextPageToken")
                 if not next_page_token:
                     raise ValueError("Jira search response omitted the next page token")
+                if next_page_token in seen_tokens:
+                    raise ValueError("Jira search response repeated a page token")
+                seen_tokens.add(next_page_token)
 
     async def _create_epic(self, epic: Epic) -> str:
         auth = (self.settings.username, self.settings.api_token)

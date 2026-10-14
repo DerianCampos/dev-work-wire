@@ -49,7 +49,14 @@ and unresolved state before retrying.
 
 ## Interactive Menu
 
-Use the arrow keys and Enter to choose an action, or press its number (`1`–`9`) to select it directly. Press `?` for keyboard help. Esc leaves the main menu or returns from help; `0` selects **Exit**. The layout adapts to smaller terminals.
+Use the arrow keys and Enter to choose an action, or press its number (`1`–`9`) to select it directly. Press `s` for **Search work items**, `w` for **Manage work items**, or `?` for keyboard help. Esc leaves the main menu or returns from help; `0` selects **Exit**. The layout adapts to smaller terminals.
+
+Manage Work offers story editing, assignment, status changes, and transition listing.
+Story editing asks which fields to change; unselected fields remain untouched.
+Optional fields can be cleared explicitly. Assignment offers the current user,
+an account ID, or unassigned. Status changes show available Jira action names,
+destination statuses, and IDs. These menu writes require confirmation; Back or
+Ctrl-C returns without writing. Search offers comma-separated filters or raw JQL.
 
 The menu can retrieve an epic or story, list an epic's stories or a user's assigned work, create one epic or story, preview a folder, import it after confirmation, or configure the Jira connection and projects (option `9`, a sub-menu that mirrors `dwire config`: show settings, set up the connection, add a project, choose the default, remove a project). Clearing all stored settings is CLI-only (`dwire config clear`). The assigned-work prompt accepts the provider's account ID; leave it blank for the authenticated user. Creation prompts for title, description, priority, and labels; story creation also prompts for an existing epic key and whole-number points. Labels are comma-separated in the menu. The menu returns after each action.
 
@@ -98,6 +105,95 @@ dwire list-assigned --assignee 557058:abcd-1234
 ```
 
 Without `--assignee`, the command uses the authenticated Jira user. With it, supply a Jira account ID, not an email address or display name. The command lists open work in the configured project across all issue types, ordered by most recently updated. Each row shows key, issue type, title, and status. “Open” means the Jira status category is not Done. An empty result prints a message and succeeds.
+
+### Update a story
+
+```bash
+dwire update-story PROJ-124 --title "Revised login" --description "**Updated** details" \
+  --priority High --label backend --label urgent --points 8 --epic PROJ-123
+dwire update-story PROJ-124 --description "" --clear-labels --clear-points --clear-epic
+```
+
+Only supplied fields are written. At least one change is required. Titles and
+priorities cannot be blank; points are nonnegative whole numbers. Descriptions
+use the same Markdown-to-ADF conversion as creation. An empty `--description`
+clears the description. Repeated `--label` values **replace** existing labels;
+`--clear-labels` removes all labels. `--clear-points` removes the estimate, and
+`--clear-epic` removes the parent. Clearing options cannot be combined with their
+corresponding value options. `--epic` must identify an existing Epic, and the
+target must be a Story. Points use the configured `field_mappings.story_points`.
+JSON `data` contains `key` and `changed_fields`.
+
+### Assign an issue
+
+```bash
+dwire assign PROJ-124 --assignee me
+dwire assign PROJ-124 --assignee 557058:abcd-1234
+dwire assign PROJ-124 --unassign
+```
+
+Assignment supports any issue type. Supply exactly one of `--assignee` or
+`--unassign`. Assignees use Jira account IDs, not emails or display names;
+`me` resolves the authenticated user. JSON `data` contains `key` and the
+resolved `assignee` account ID, or `null` when unassigned.
+
+### List transitions and change status
+
+```bash
+dwire list-transitions PROJ-124
+dwire transition PROJ-124 --status "In Progress"
+dwire transition PROJ-124 --transition-id 31
+```
+
+Transition listing shows the available action ID, name, destination status,
+and any required screen fields. JSON `data.transitions` contains `id`, `name`,
+`status`, and `required_fields` for each action.
+
+Supply exactly one transition selector. `--status` matches destination names
+case-insensitively, including names containing spaces. When multiple actions
+lead to the same status, or none matches, the command lists the choices and
+performs no write. Use `--transition-id` to choose an available action directly.
+Existing `transition_overrides` entries provide aliases to Jira action names;
+see [Configuration](../getting-started/configuration.md). Jira enforces workflow
+rules and permissions. Transition-screen field input is not supported; if Jira
+requires additional values, its field error is reported. Successful JSON `data`
+contains `key` and the selected `transition`.
+
+### Search work items
+
+```bash
+dwire search
+dwire --project OTHER search --status "To Do" --status "In Progress" \
+  --label backend --label urgent --type Story --type Bug
+dwire search --jql 'project IN (PROJ, OTHER) AND statusCategory != Done ORDER BY key ASC'
+```
+
+Filter searches use the selected project and include all statuses and issue
+types unless filtered. Multiple statuses or types match any specified value;
+multiple labels require every specified label. Different filter categories
+are combined with AND. Results are ordered by most recently updated, then key.
+The CLI retrieves every page. An empty result succeeds.
+
+`--jql` runs the supplied query unchanged, including project scope and ordering;
+it can search across accessible projects. It cannot be combined with filter
+flags. Jira reports invalid JQL and permission errors. JSON `data` contains
+the effective `jql` and `items`, each with `key`, `issue_type`, `title`, and `status`.
+Jira search indexing can lag behind a recent write; fetch the issue directly
+when checking a change.
+
+### Write acknowledgments and failures
+
+Direct `update-story`, `assign`, and `transition` commands write immediately,
+including in JSON mode. Their success output acknowledges Jira's response;
+it does not perform an additional read to verify the resulting state. Explicit
+issue keys can target accessible issues outside the selected project.
+
+Writes are sent once. A timeout, HTTP 408, or server error returns
+`WRITE_UNCERTAIN`: Jira may have applied the change. Inspect the issue before
+retrying. Other new-command errors include `VALIDATION_FAILED`, `NOT_FOUND`,
+`INVALID_TRANSITION`, `AUTHENTICATION_FAILED`, `PERMISSION_DENIED`, and
+`JIRA_ERROR`, with Jira field details retained in the message. Reads retain
+the configured retry policy.
 
 ### Configure the Jira connection
 

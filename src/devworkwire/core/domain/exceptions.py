@@ -17,3 +17,7 @@ class DuplicateException(DomainException):
 class InvalidTransitionException(DomainException):
     """Raised when an invalid state transition is attempted."""
     pass
+
+
+class UncertainWriteException(DomainException):
+    """Jira may have applied the write; inspect the issue before retrying."""

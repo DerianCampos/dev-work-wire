@@ -125,6 +125,21 @@ field_mappings:
 | `field_mappings.story_points` | Custom field ID for story points | `customfield_10011` |
 | `transition_overrides` | Map DevWorkWire transition names to provider-specific names | `{}` |
 
+`transition_overrides` maps aliases accepted by `transition --status` to Jira
+workflow **action names**, rather than destination status names:
+
+```yaml
+transition_overrides:
+  start: Start Progress
+  finish: Close Issue
+```
+
+For example, `dwire transition PROJ-124 --status start` selects the available
+`Start Progress` action. Alias keys and action names match case-insensitively.
+Without an alias, `--status` matches the destination status. Ambiguous matches
+fail without writing; `--transition-id` selects an available ID directly and
+bypasses aliases. Use `dwire list-transitions PROJ-124` to discover names and IDs.
+
 ## Generating a Jira API Token
 
 1. Go to [Atlassian API tokens](https://id.atlassian.com/manage-profile/security/api-tokens)
