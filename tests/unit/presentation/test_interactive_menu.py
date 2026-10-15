@@ -263,3 +263,30 @@ def test_ctrl_c_in_the_configure_submenu_returns_to_the_main_menu(monkeypatch):
     main._run_interactive_menu()
 
     main.inquirer.confirm.assert_not_called()
+
+
+def test_configure_theme_saves_and_applies_the_choice(monkeypatch):
+    from devworkwire.config.theme_config import ThemeName, load_theme
+    from devworkwire.presentation.cli.theme import active_theme
+
+    _configure(monkeypatch, [main._CONFIG_THEME, ThemeName.light])
+    token = active_theme.set(ThemeName.dark)
+    try:
+        main._run_interactive_menu()
+
+        assert load_theme() == ThemeName.light
+        assert active_theme.get() == ThemeName.light
+    finally:
+        active_theme.reset(token)
+
+
+def test_configure_theme_back_keeps_preference_and_skips_pause(monkeypatch):
+    from devworkwire.config.theme_config import ThemeName, load_theme, save_theme
+
+    save_theme(ThemeName.dracula)
+    _configure(monkeypatch, [main._CONFIG_THEME, None])
+
+    main._run_interactive_menu()
+
+    assert load_theme() == ThemeName.dracula
+    main.inquirer.confirm.assert_not_called()

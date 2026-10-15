@@ -18,6 +18,7 @@ from InquirerPy.base.control import Choice
 from typer.core import TyperGroup
 
 from devworkwire.config.jira_connection import ResolvedValue
+from devworkwire.config.theme_config import ThemeName, load_theme, save_theme
 from devworkwire.core.composition import Container
 from devworkwire.core.domain import Epic, Label, Priority, StoryPoints, UserStory
 from devworkwire.core.domain.exceptions import BusinessRuleViolation
@@ -36,6 +37,7 @@ from devworkwire.features.import_.application.folder_state import (
 from devworkwire.presentation.cli.epic_panel import render_epic_panel, render_story_panel
 from devworkwire.presentation.cli.menu_view import MenuGroup, MenuOption, run_menu
 from devworkwire.presentation.cli.work_actions import WorkActions
+from devworkwire.presentation.cli.theme import prompt_style, active_theme, current_palette, themed_echo
 from devworkwire.presentation.cli.work_menu import run_search_menu, run_work_menu
 
 # Newer Typer releases bundle their own click copy, so their argument errors
@@ -80,7 +82,7 @@ class JsonTyperGroup(TyperGroup):
 
 
 app = typer.Typer(cls=JsonTyperGroup)
-config_app = typer.Typer(help="Manage the stored Jira connection and projects.")
+config_app = typer.Typer(help="Manage the stored Jira connection, projects, and CLI theme.")
 app.add_typer(config_app, name="config")
 container = Container()
 
@@ -178,7 +180,7 @@ _MANAGE = "Manage work items"
 
 _MENU_GROUPS = (
     MenuGroup(
-        "WORK ITEMS", "Browse existing\nwork items", "◆", "#27baff",
+        "WORK ITEMS", "Browse existing\nwork items", "◆", "work",
         (
             MenuOption("1", _FETCH_EPIC, _FETCH_EPIC),
             MenuOption("2", _FETCH_STORY, _FETCH_STORY),
@@ -188,7 +190,7 @@ _MENU_GROUPS = (
         ),
     ),
     MenuGroup(
-        "CREATE", "Add individual\nwork items", "+", "#00e587",
+        "CREATE", "Add individual\nwork items", "+", "success",
         (
             MenuOption("5", _CREATE_EPIC, _CREATE_EPIC),
             MenuOption("6", _CREATE_STORY, _CREATE_STORY),
@@ -196,11 +198,11 @@ _MENU_GROUPS = (
         ),
     ),
     MenuGroup(
-        "IMPORT", "Load work items\nfrom a folder", "↑", "#ffae00",
+        "IMPORT", "Load work items\nfrom a folder", "↑", "warning",
         (MenuOption("7", _IMPORT_FOLDER, _IMPORT_FOLDER),),
     ),
     MenuGroup(
-        "LOCAL", "Check files and\nmanage settings", "▣", "#b05bff",
+        "LOCAL", "Check files and\nmanage settings", "▣", "local",
         (
             MenuOption("8", _PREVIEW_FOLDER, _PREVIEW_FOLDER),
             MenuOption("9", _CONFIGURE, _CONFIGURE),
@@ -281,12 +283,22 @@ def _preview_data(preview: FolderPreview, state: ImportState | None) -> dict:
 def main(
     ctx: typer.Context,
     output_format: OutputFormat = typer.Option(OutputFormat.text, "--format"),
+    theme: Optional[ThemeName] = typer.Option(
+        None, "--theme", help="Palette for this run: dark, light, dracula, solarized, monochrome"
+    ),
     project: Optional[str] = typer.Option(
         None, "--project", help="Jira project key for this run (default: the stored default project)"
     ),
 ) -> None:
     """DevWorkWire CLI. Run without a subcommand for the interactive menu."""
     _output_format.set(output_format)
+    try:
+        selected_theme = theme if theme is not None else load_theme()
+    except (OSError, ValueError) as error:
+        typer.echo(f"Warning: {error} Using the dark theme.", err=True)
+        selected_theme = ThemeName.dark
+    theme_token = active_theme.set(selected_theme)
+    ctx.call_on_close(lambda: active_theme.reset(theme_token))
     container.select_project(project)
     if ctx.invoked_subcommand is None:
         if output_format == OutputFormat.json:
@@ -496,6 +508,14 @@ def config_show() -> None:
     _run_command("config show", _config_show)
 
 
+@config_app.command("theme")
+def config_theme(
+    theme: Optional[ThemeName] = typer.Argument(None, help="Theme to save; omit to show the current choice."),
+) -> None:
+    """Show the current theme and available palettes, or save a theme for future runs."""
+    _run_command("config theme", lambda: _config_theme(theme))
+
+
 @config_app.command("clear")
 def config_clear(
     yes: bool = typer.Option(False, "--yes", help="Clear without an interactive confirmation"),
@@ -512,7 +532,7 @@ async def _fetch_epic(key: str) -> bool:
             _record("error", {"key": key}, "NOT_FOUND")
             return False
         _record("completed", {"epic": _epic_data(epic)})
-        typer.secho(render_epic_panel(epic), fg=typer.colors.CYAN)
+        themed_echo(render_epic_panel(epic))
         return True
     except Exception as error:
         typer.echo(f"Error fetching epic: {error}", err=True)
@@ -527,7 +547,7 @@ async def _fetch_story(key: str) -> bool:
             _record("error", {"key": key}, "NOT_FOUND")
             return False
         _record("completed", {"story": _story_data(story)})
-        typer.secho(render_story_panel(story), fg=typer.colors.CYAN)
+        themed_echo(render_story_panel(story))
         return True
     except Exception as error:
         typer.echo(f"Error fetching story: {error}", err=True)
@@ -897,14 +917,14 @@ def _reconcile_missing_story(folder_path: str, old_id: str, new_id: str | None) 
 
 
 def _prompt_item(include_points: bool = False) -> WorkItemInput:
-    title = inquirer.text(message="Title:").execute()
-    description = inquirer.text(message="Description (optional):").execute()
-    priority = inquirer.text(message="Priority (optional):").execute()
-    labels_text = inquirer.text(message="Labels, comma-separated (optional):").execute()
+    title = inquirer.text(style=prompt_style(), message="Title:").execute()
+    description = inquirer.text(style=prompt_style(), message="Description (optional):").execute()
+    priority = inquirer.text(style=prompt_style(), message="Priority (optional):").execute()
+    labels_text = inquirer.text(style=prompt_style(), message="Labels, comma-separated (optional):").execute()
     labels = tuple(label.strip() for label in labels_text.split(",") if label.strip())
     points = None
     if include_points:
-        points_text = inquirer.text(message="Story points, whole number (optional):").execute()
+        points_text = inquirer.text(style=prompt_style(), message="Story points, whole number (optional):").execute()
         if points_text.strip():
             points = int(points_text)
             if points < 0:
@@ -920,6 +940,25 @@ def _config_failure(action: str, error: Exception, code: str = "COMMAND_FAILED")
     typer.echo(f"Error {action}: {error}", err=True)
     _record("error", {}, code)
     return False
+
+
+def _config_theme(theme: ThemeName | None) -> bool:
+    try:
+        if theme is not None:
+            save_theme(theme)
+            active_theme.set(theme)
+        saved = load_theme()
+    except (OSError, ValueError) as error:
+        return _config_failure("reading or saving theme settings", error)
+    effective = current_palette().name
+    _record("completed", {
+        "saved": saved.value,
+        "effective": effective.value,
+        "available": [name.value for name in ThemeName],
+    })
+    typer.echo(f"Theme: {effective.value} (saved: {saved.value})")
+    typer.echo("Available: " + ", ".join(name.value for name in ThemeName))
+    return True
 
 
 def _config_setup(base_url: str | None, email: str | None, project_key: str | None) -> bool:
@@ -1011,11 +1050,13 @@ def _config_show() -> bool:
 
     data: dict = {name: shown(name, resolved) for name, resolved in fields.items()}
     data["projects"] = [{"key": project.key, "default": project.is_default} for project in projects]
+    data["theme"] = current_palette().name.value
     _record("completed", data)
     for name in fields:
         entry = data[name]
         typer.echo(f"{name:<12} {entry['value']}  ({entry['source']})" if entry else f"{name:<12} not set")
     typer.echo(_projects_line(projects))
+    typer.echo(f"Theme: {data['theme']}")
     if connection.store_error:
         typer.echo(f"Warning: the stored config could not be read: {connection.store_error}", err=True)
     if any(data[name] is None for name in fields):
@@ -1048,6 +1089,7 @@ _CONFIG_SETUP = "Set up connection (URL, email, API token)"
 _CONFIG_ADD_PROJECT = "Add a project"
 _CONFIG_SET_DEFAULT = "Choose the default project"
 _CONFIG_REMOVE_PROJECT = "Remove a project"
+_CONFIG_THEME = "Choose a theme"
 _CONFIG_BACK = "Back"
 
 
@@ -1061,6 +1103,7 @@ def _change_project(action: str, message: str) -> bool:
         typer.echo("No projects configured yet. Add one first.")
         return True
     picked = inquirer.select(
+        style=prompt_style(),
         message=message,
         choices=[
             *(Choice(value=project.key, name=f"{project.key}{' (default)' if project.is_default else ''}")
@@ -1081,26 +1124,39 @@ def _configure_menu() -> bool:
     """
     try:
         choice = inquirer.select(
+            style=prompt_style(),
             message="Configure:",
             choices=[
                 _CONFIG_SHOW, _CONFIG_SETUP, _CONFIG_ADD_PROJECT,
-                _CONFIG_SET_DEFAULT, _CONFIG_REMOVE_PROJECT, _CONFIG_BACK,
+                _CONFIG_SET_DEFAULT, _CONFIG_REMOVE_PROJECT, _CONFIG_THEME, _CONFIG_BACK,
             ],
         ).execute()
         if choice == _CONFIG_BACK:
             return False
         if choice == _CONFIG_SHOW:
             _config_show()
+        elif choice == _CONFIG_THEME:
+            picked = inquirer.select(
+                style=prompt_style(), message="Theme:",
+                choices=[
+                    *(Choice(value=name, name=name.value.title()) for name in ThemeName),
+                    Choice(value=None, name=_CONFIG_BACK),
+                ],
+                default=active_theme.get(),
+            ).execute()
+            if picked is None:
+                return False
+            _config_theme(picked)
         elif choice == _CONFIG_SETUP:
             _config_setup(None, None, None)
         elif choice == _CONFIG_ADD_PROJECT:
-            key = inquirer.text(message="Project key (e.g. PROJ):").execute()
+            key = inquirer.text(style=prompt_style(), message="Project key (e.g. PROJ):").execute()
             try:
                 normalize_project_key(key)
             except BusinessRuleViolation as error:
                 typer.echo(f"Error updating projects: {error}", err=True)
                 return True
-            make_default = inquirer.confirm(message="Make it the default project?", default=False).execute()
+            make_default = inquirer.confirm(style=prompt_style(), message="Make it the default project?", default=False).execute()
             _config_projects("add", key, make_default)
         elif choice == _CONFIG_SET_DEFAULT:
             return _change_project("default", "Default project:")
@@ -1121,16 +1177,17 @@ def _run_interactive_menu() -> None:
         click.clear()
         try:
             if choice == _FETCH_EPIC:
-                key = inquirer.text(message="Epic key (e.g. PROJ-123):").execute()
+                key = inquirer.text(style=prompt_style(), message="Epic key (e.g. PROJ-123):").execute()
                 asyncio.run(_fetch_epic(key))
             elif choice == _FETCH_STORY:
-                key = inquirer.text(message="Story key (e.g. PROJ-124):").execute()
+                key = inquirer.text(style=prompt_style(), message="Story key (e.g. PROJ-124):").execute()
                 asyncio.run(_fetch_story(key))
             elif choice == _LIST_STORIES:
-                key = inquirer.text(message="Epic key (e.g. PROJ-123):").execute()
+                key = inquirer.text(style=prompt_style(), message="Epic key (e.g. PROJ-123):").execute()
                 asyncio.run(_list_stories(key))
             elif choice == _LIST_ASSIGNED:
                 account_id = inquirer.text(
+                    style=prompt_style(),
                     message="Account ID (leave blank for current user):"
                 ).execute().strip()
                 asyncio.run(_list_assigned(account_id or None))
@@ -1143,10 +1200,11 @@ def _run_interactive_menu() -> None:
             elif choice == _CREATE_EPIC:
                 asyncio.run(_create_epic(_prompt_item()))
             elif choice == _CREATE_STORY:
-                key = inquirer.text(message="Parent epic key (e.g. PROJ-123):").execute()
+                key = inquirer.text(style=prompt_style(), message="Parent epic key (e.g. PROJ-123):").execute()
                 asyncio.run(_create_story(key, _prompt_item(include_points=True)))
             elif choice == _PREVIEW_FOLDER:
                 folder_path = inquirer.text(
+                    style=prompt_style(),
                     message="Folder containing epic.md and optional stories.md:"
                 ).execute()
                 _preview_folder(folder_path)
@@ -1155,12 +1213,14 @@ def _run_interactive_menu() -> None:
                     continue
             elif choice == _IMPORT_FOLDER:
                 folder_path = inquirer.text(
+                    style=prompt_style(),
                     message="Folder containing epic.md and optional stories.md:"
                 ).execute()
                 asyncio.run(_import_folder(folder_path))
         except ValueError as error:
             typer.echo(f"Invalid input: {error}", err=True)
         inquirer.confirm(
+            style=prompt_style(),
             message="Press Enter to return to the menu...", default=True
         ).execute()
 

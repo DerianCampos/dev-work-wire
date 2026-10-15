@@ -7,6 +7,32 @@ DevWorkWire resolves its Jira connection (base URL, email, API token, project ke
 
 Logging and request settings (timeout, retries) come from `config_{env}.yml`, selected by `APP_ENV`.
 
+## CLI themes
+
+Choose **Configure** (option `9`) → **Choose a theme** in the interactive menu, or save a preference directly:
+
+```bash
+dwire config theme light       # save and apply a theme
+dwire config theme             # show saved/effective themes and available choices
+dwire --theme dracula          # override the palette for this run only
+dwire --theme monochrome fetch-story PROJ-124
+dwire --format json config theme dark
+```
+
+| Theme | Appearance |
+|---|---|
+| `dark` (default) | Dark slate background, soft cyan, blue, green, amber, and purple accents |
+| `light` | Near-white background, dark text, deeper accents |
+| `dracula` | Charcoal background, cyan, green, yellow, and purple accents |
+| `solarized` | Dark teal background, warm neutral text and balanced accents |
+| `monochrome` | Terminal default colors, reverse/bold selection, no app color sequences |
+
+Themes style the menu, keyboard help, interactive prompts, startup banner, and epic/story detail panels. Menu borders use neutral colors so headings and the selected action stand out. Color palettes target at least 4.5:1 contrast for text and selected actions; exact colors depend on terminal color support. Monochrome uses the terminal's own foreground/background settings.
+
+The preference is saved separately from Jira credentials in `theme.json`, beside `config.db`. `DEVWORKWIRE_CONFIG_DIR` and `XDG_CONFIG_HOME` apply to both. `--theme` overrides the saved choice without changing it. A nonempty `NO_COLOR` environment variable takes priority over both and uses Monochrome. Choosing a theme in Configure applies it immediately and saves it for future runs.
+
+`dwire config show` includes the effective theme. `dwire config theme` supports JSON output with `saved`, `effective`, and `available` fields. Theme commands work without a Jira connection, and `dwire config clear` preserves your theme. If the preference file is unreadable or invalid, other commands warn on stderr and fall back to Dark; `dwire config theme NAME` can replace an invalid preference.
+
 ## Stored Jira settings (`dwire config`)
 
 The easiest way to configure Jira is to let the CLI store it for you; no file editing needed:
@@ -17,7 +43,7 @@ dwire config add-project OTHER   # add more projects; --default makes it the def
 dwire config set-default OTHER   # choose the project used when --project is not given
 dwire config remove-project OTHER
 dwire config show                # effective values, where each comes from, token masked
-dwire config clear               # delete everything stored (asks first; --yes to skip)
+dwire config clear               # delete the stored Jira connection/projects (asks first; --yes to skip)
 ```
 
 One Jira connection serves all your projects. The first project you add becomes the default; removing the default promotes the oldest remaining one. Pick another project for a single run with the root option:

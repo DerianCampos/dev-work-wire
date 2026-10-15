@@ -7,8 +7,10 @@ from prompt_toolkit.application import Application, get_app
 from prompt_toolkit.formatted_text import FormattedText
 from prompt_toolkit.key_binding import KeyBindings
 from prompt_toolkit.layout import FormattedTextControl, Layout, Window
+from prompt_toolkit.styles import Style
 
 from devworkwire.presentation.cli.banner import app_version
+from devworkwire.presentation.cli.theme import current_palette
 
 
 @dataclass(frozen=True)
@@ -23,7 +25,7 @@ class MenuGroup:
     title: str
     description: str
     symbol: str
-    color: str
+    color_role: str
     options: tuple[MenuOption, ...]
 
 
@@ -51,35 +53,36 @@ def _render_full(
     selected: int,
     width: int,
 ) -> None:
-    cyan = "fg:#00d7e9"
-    muted = "fg:#a5b4c4"
+    palette = current_palette()
+    accent = palette.text_style("accent")
+    muted = palette.text_style("muted")
     inner_width = width - 2
 
-    _add_line(fragments, (cyan, "╔" + "═" * inner_width + "╗"))
+    _add_line(fragments, (accent, "╔" + "═" * inner_width + "╗"))
     for logo_line in _logo_lines():
         text = _clip(logo_line, inner_width - 2).center(inner_width)
-        _add_line(fragments, (cyan, "║"), ("fg:#00d7e9 bold", text), (cyan, "║"))
+        _add_line(fragments, (accent, "║"), (palette.text_style("accent") + " bold", text), (accent, "║"))
     title = "DevWorkWire · Backlog Workflow Assistant"
-    _add_line(fragments, (cyan, "║"), (cyan, title.center(inner_width)), (cyan, "║"))
-    _add_line(fragments, (cyan, "║"), (muted, "─" * inner_width), (cyan, "║"))
-    legend = f"Developed by alonsovndev · v{app_version()}"
-    _add_line(fragments, (cyan, "║"), (muted, " " + legend.ljust(inner_width - 2) + " "), (cyan, "║"))
-    _add_line(fragments, (cyan, "╚" + "═" * inner_width + "╝"))
+    _add_line(fragments, (accent, "║"), (accent, title.center(inner_width)), (accent, "║"))
+    _add_line(fragments, (accent, "║"), (muted, "─" * inner_width), (accent, "║"))
+    legend = f"Developed by alonsovndev · v{app_version()} · Theme: {palette.name.value}"
+    _add_line(fragments, (accent, "║"), (muted, " " + legend.ljust(inner_width - 2) + " "), (accent, "║"))
+    _add_line(fragments, (accent, "╚" + "═" * inner_width + "╝"))
     _add_line(fragments, ("", ""))
-    _add_line(fragments, ("fg:#00e587", "✓  System ready."))
+    _add_line(fragments, (palette.text_style("success"), "✓  System ready."))
     _add_line(fragments, ("bold", "What would you like to do?"))
 
     option_index = 0
     left_width = 32
     right_width = width - left_width - 3
     for group in groups:
-        _add_line(fragments, (f"fg:{group.color}", "╭" + "─" * (width - 2) + "╮"))
+        _add_line(fragments, (muted, "╭" + "─" * (width - 2) + "╮"))
         description = group.description.split("\n")
         rows = max(len(group.options), len(description) + 1)
         for row_index in range(rows):
             if row_index == 0:
                 left = f" {group.symbol}  {group.title}"
-                left_style = f"fg:{group.color} bold"
+                left_style = palette.text_style(group.color_role) + " bold"
             else:
                 left = f"    {description[row_index - 1]}" if row_index <= len(description) else ""
                 left_style = muted
@@ -91,7 +94,7 @@ def _render_full(
                 marker = "❯" if active else " "
                 right = f" {marker} [{option.number}]  {option.label}"
                 right = _clip(right, right_width).ljust(right_width)
-                right_style = f"bg:{group.color} fg:#000000 bold" if active else ""
+                right_style = palette.selected_style(group.color_role) if active else ""
                 option_index += 1
             else:
                 right = " " * right_width
@@ -99,15 +102,15 @@ def _render_full(
 
             _add_line(
                 fragments,
-                (f"fg:{group.color}", "│"),
+                (muted, "│"),
                 (left_style, left),
-                (f"fg:{group.color}", "│"),
+                (muted, "│"),
                 (right_style, right),
-                (f"fg:{group.color}", "│"),
+                (muted, "│"),
             )
-        _add_line(fragments, (f"fg:{group.color}", "╰" + "─" * (width - 2) + "╯"))
+        _add_line(fragments, (muted, "╰" + "─" * (width - 2) + "╯"))
 
-    exit_style = "bg:#ff5f72 fg:#000000 bold" if selected == option_index else "fg:#ff5f72"
+    exit_style = palette.selected_style("error") if selected == option_index else palette.text_style("error")
     _add_line(fragments, (exit_style, " ❯ [0]  Exit " if selected == option_index else "   [0]  Exit"))
     _add_line(fragments, (muted, "↑ ↓ Navigate   Enter Select   0–9/s/w Shortcut   Esc Exit   ? Help"))
 
@@ -119,31 +122,33 @@ def _render_compact(
     width: int,
     height: int,
 ) -> None:
-    _add_line(fragments, ("fg:#00d7e9 bold", _clip("DWIRE · DevWorkWire", width)))
-    _add_line(fragments, ("fg:#a5b4c4", _clip("Backlog Workflow Assistant", width)))
-    _add_line(fragments, ("fg:#00e587", _clip("✓ System ready.", width)))
+    palette = current_palette()
+    title = f"DWIRE · DevWorkWire · Theme: {palette.name.value}"
+    _add_line(fragments, (palette.text_style("accent") + " bold", _clip(title, width)))
+    _add_line(fragments, (palette.text_style("muted"), _clip("Backlog Workflow Assistant", width)))
+    _add_line(fragments, (palette.text_style("success"), _clip("✓ System ready.", width)))
     _add_line(fragments, ("bold", _clip("Choose an action:", width)))
 
     option_index = 0
     for group in groups:
         title = f"{group.symbol} {group.title}"
-        _add_line(fragments, (f"fg:{group.color} bold", _clip(title, width)))
+        _add_line(fragments, (palette.text_style(group.color_role) + " bold", _clip(title, width)))
         for option in group.options:
             active = option_index == selected
             text = f" {'❯' if active else ' '} [{option.number}] {option.label}"
-            style = f"bg:{group.color} fg:#000000 bold" if active else ""
+            style = palette.selected_style(group.color_role) if active else ""
             _add_line(fragments, (style, _clip(text, width).ljust(width)))
             option_index += 1
         if height >= 6 + sum(len(group.options) for group in groups) + 2 * len(groups):
             _add_line(fragments, ("", ""))
 
-    exit_style = "bg:#ff5f72 fg:#000000 bold" if selected == option_index else "fg:#ff5f72"
+    exit_style = palette.selected_style("error") if selected == option_index else palette.text_style("error")
     exit_text = " ❯ [0] Exit" if selected == option_index else "   [0] Exit"
     _add_line(fragments, (exit_style, _clip(exit_text, width).ljust(width)))
     guide = "↑↓ Move  Enter Select  0–9/s/w Shortcut  Esc Exit  ? Help"
     if width < 64:
         guide = "↑↓ Move  Enter Select  Esc Exit  ? Help"
-    _add_line(fragments, ("fg:#a5b4c4", _clip(guide, width)))
+    _add_line(fragments, (palette.text_style("muted"), _clip(guide, width)))
 
 
 def _fit_height(fragments: list[tuple[str, str]], height: int) -> None:
@@ -157,7 +162,7 @@ def _fit_height(fragments: list[tuple[str, str]], height: int) -> None:
         return
 
     selected_line = next(
-        (index for index, line in enumerate(lines) if any("bg:" in style for style, _ in line)),
+        (index for index, line in enumerate(lines) if any("bg:" in style or "reverse" in style for style, _ in line)),
         0,
     )
     if height <= 2:
@@ -183,6 +188,7 @@ def render_menu(
 ) -> FormattedText:
     """Render the menu for a terminal size without writing to the terminal."""
     fragments: list[tuple[str, str]] = []
+    palette = current_palette()
     width = max(1, width)
     if show_help:
         if height < 6:
@@ -192,9 +198,9 @@ def render_menu(
                 "0–9/s/w Select actions",
             )
             for line in short_help[:max(1, height)]:
-                _add_line(fragments, ("fg:#00d7e9", _clip(line, width)))
+                _add_line(fragments, (palette.text_style("accent"), _clip(line, width)))
             return FormattedText(fragments)
-        _add_line(fragments, ("fg:#00d7e9 bold", _clip("Keyboard help", width)))
+        _add_line(fragments, (palette.text_style("accent") + " bold", _clip("Keyboard help", width)))
         _add_line(fragments, ("", _clip("↑ / ↓    Move between actions", width)))
         _add_line(fragments, ("", _clip("Enter    Select the highlighted action", width)))
         _add_line(fragments, ("", _clip("0–9/s/w  Select an action directly", width)))
@@ -283,6 +289,7 @@ def run_menu(groups: tuple[MenuGroup, ...], exit_value: str) -> str:
 
     window = Window(content=FormattedTextControl(render), wrap_lines=False, always_hide_cursor=True)
     application: Application[str] = Application(
-        layout=Layout(window), key_bindings=bindings, full_screen=True
+        layout=Layout(window), key_bindings=bindings, full_screen=True,
+        style=Style.from_dict({"": current_palette().base_style}),
     )
     return application.run()
